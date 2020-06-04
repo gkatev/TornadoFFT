@@ -1,11 +1,12 @@
-tornado = ../tornadovm/bin/bin/tornado
+TORNADO_HOME = ../tornadovm
+
+tornado = $(TORNADO_HOME)/bin/bin/tornado
 javac = $(JAVA_HOME)/bin/javac
 
 # --------------
 
 libs += $(wildcard lib/*.jar)
-# libs += ../tornadovm/tornado-api/target/tornado-api-0.6-5b7f88e.jar
-libs += ../tornadovm/tornado-api/target/tornado-api-0.6-1c115f1.jar
+libs += $(shell find $(TORNADO_HOME)/tornado-api/target -name "tornado-api-*.jar" | head -n 1)
 lib = $(subst $() $(),:,$(libs))
 
 CLASS = class

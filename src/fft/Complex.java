@@ -39,6 +39,7 @@
 package fft;
 
 import java.util.Vector;
+import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -112,7 +113,14 @@ public class Complex {
 
 		this.n = n;
 		factors = factor();
+		
+		long start, end;
+		
+		start = System.nanoTime();
 		twiddle = wavetable();
+		end = System.nanoTime();
+		
+		System.out.println("wavetable(): " + (end - start) / 1e06 + " ms.");
 		
 		// twiddle = new double[factors.length][][];
 		
@@ -1161,44 +1169,98 @@ public class Complex {
 		return ret;
 	} */
 	
+	// city
+	// non-parallel 15446 ms
+	// parallel, without actual execution 5000 ms
+	
+	
 	private double[][][] wavetable() {
 		if(n < 2)
-			return;
-		
-		final double[][][] ret = new double[factors.length][][];
+			return null;
 		
 		int[] product_1 = new int[factors.length];
 		int[] q = new int[factors.length];
 		int product = 1;
 		
+		int[] tbase = new int[factors.length];
+		int ret_1d_size = 0;
+		
 		for (int i = 0; i < factors.length; i++) {
 			product_1[i] = product;
-			product *= factor;
+			product *= factors[i];
 			q[i] = n/product;
+			
+			tbase[i] = ret_1d_size;
+			ret_1d_size += (q[i] + 1) * (2 * (factors[i] - 1));
+			
+			// System.out.println("product_1_" + i + " = " + product_1[i]);
+			// System.out.println("q_" + i + " = " + q[i]);
+			// System.out.println("tbase_" + i + " = " + tbase[i]);
 		}
 		
+		final double[] ret_1d = new double[ret_1d_size];
 		
-		
-		
+		// System.out.println("ret_1d_size = " + ret_1d_size);
 		
 		// new TaskSchedule("s0")
-			// .task("t0", Complex::wavetable_sp, n, factors, twiddle)
-			// .streamOut((Object) twiddle)
+			// .task("t0", Complex::wavetable_sp, n,
+				// factors, product_1, q, tbase, ret_1d)
+			// .streamOut(ret_1d)
 			// .execute();
+		
+		// new TaskSchedule("s0")
+			// .task("t0", Complex::wavetable_test)
+			// .execute();
+		
+		System.out.println(factors.length);
+		
+		// if(n > 2)
+			// return null;
+		
+		final double[][][] ret = new double[factors.length][][];
+		
+		for (int i = 0; i < factors.length; i++) {
+			ret[i] = new double[q[i] + 1][];
+			
+			System.out.println("rlen = " + ret[i].length);
+			
+			final int len = 2 * (factors[i] - 1);
+			int base = tbase[i];
+			
+			for(int j = 0; j < ret[i].length; j++) {
+				// ret[i][j] = Arrays.copyOfRange(ret_1d, base, base + len);
+				base += len;
+			}
+		}
+		
+		return ret;
+	}
+	
+	private static void wavetable_test() {
+		
 	}
 	
 	private static void wavetable_sp(int n, int[] factors,
-			int[] product_1, int[] q) {
+			int[] product_1, int[] q, int[] tbase, double[] twid) {
+		
+		
+		if(n > 0)
+			return;
 		
 		final double d_theta = -2.0 * PI / n;
 		
 		for(@Parallel int i = 0; i < factors.length; i++) {
+			final int twid_base_1d = tbase[i];
+			
 			for(@Parallel int j = 0; j < factors[i] - 1; j++) {
-				twid[i][0][2 * j] = 1.0;
-				twid[i][0][2 * j + 1] = 0.0;
+				final int twid_base_2d = twid_base_1d + 0;
+				
+				// twid[twid_base_2d + 2 * j] = 1.0;
+				// twid[twid_base_2d + 2 * j + 1] = 0.0;
 			}
 			
 			for(@Parallel int k = 1; k <= q[i]; k++) {
+				final int twid_base_2d = twid_base_1d + k * (q[i] + 1);
 				int m = 0;
 				
 				for(int j = 0; j < factors[i] - 1; j++) {
@@ -1206,59 +1268,17 @@ public class Complex {
 					m %= n;
 					
 					final double theta = d_theta * m;
+					// final double x = 20 * 10;
+					// final double a = cos(x);
+					// final double a = cos(theta);
+					// final double b = sin(theta);
 					
-					twid[i][k][2 * j] = cos(theta);
-					twid[i][k][2 * j + 1] = sin(theta)
+					twid[twid_base_2d + 2 * j] = 0.0;
+					twid[twid_base_2d + 2 * j + 1] = 0.0;
+					// twid[twid_base_2d + 2 * j] = cos(theta);
+					// twid[twid_base_2d + 2 * j + 1] = sin(theta);
 				}
 			}
 		}
-		
-	}
-	
-	private static void wavetable_sp(int n, int[] factors, double[][][] twid) {
-		if (n < 2) {
-			return;
-		}
-		
-		final double d_theta = -2.0 * PI / n;
-		// final double[][][] ret = new double[factors.length][][];
-		int product = 1;
-		
-		// twid = new double[factors.length][][];
-		
-		for (int i = 0; i < factors.length; i++) {
-			int factor = factors[i];
-			int product_1 = product;
-			
-			product *= factor;
-			
-			final int q = n / product;
-			
-			// ret[i] = new double[q + 1][2 * (factor - 1)];
-			// final double[][] twid = ret[i];
-			
-			twid[i] = new double[q + 1][2 * (factor - 1)];
-			
-			for (int j = 0; j < factor - 1; j++) {
-				
-				twid[i][0][2 * j] = 1.0;
-				twid[i][0][2 * j + 1] = 0.0;
-			}
-			
-			// System.out.println("wavetable: n = " + n + ", product = " + product + ", q = " + q);
-			
-			for (@Parallel int k = 1; k <= q; k++) {
-				int m = 0;
-				for (int j = 0; j < factor - 1; j++) {
-					m += k * product_1;
-					m %= n;
-					final double theta = d_theta * m;
-					twid[i][k][2 * j] = cos(theta);
-					twid[i][k][2 * j + 1] = sin(theta);
-				}
-			}
-		}
-		
-		// return ret;
-	}
+	} 
 }
