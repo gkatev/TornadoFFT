@@ -2,6 +2,16 @@ import java.io.File;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 
+// import static math.Cordic.cos;
+// import static math.Cordic.sin;
+// import static math.Cordic.cordic;
+
+// import static math.RivensMath.cos;
+// import static math.RivensMath.sin;
+
+// import static math.TaylorMath.cos;
+// import static math.TaylorMath.sin;
+
 import fft.Complex;
 import fft.Complex2D;
 
@@ -11,6 +21,21 @@ public class FFTImage {
 			System.out.println("Usage: FFTImage <bmp>");
 			return;
 		}
+		
+		// double [] tests = { 0.0, 1.1, Math.PI/2.0, Math.PI/3.0, Math.PI*2.0/3.0, };
+		// for (int i=0; i<tests.length; i++)
+		// {
+			// double theta = tests[i];
+			// double answer = cos(theta);
+			// System.out.printf("Cordic %f is %f cf %f\n", theta, answer, Math.cos(theta));
+		// }
+		
+		// for (int i=0; i<tests.length; i++)
+		// {
+			// double theta = tests[i];
+			// double answer = sin(theta);
+			// System.out.printf("Cordic %f is %f cf %f\n", theta, answer, Math.sin(theta));
+		// }
 		
 		File imageFile = new File(args[0]);
 		BufferedImage image = ImageIO.read(imageFile);
