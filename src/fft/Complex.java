@@ -111,16 +111,15 @@ public class Complex {
 		assert (n > 1);
 
 		this.n = n;
+		this.scratch = new double[2 * n];
+		
 		factors = factor();
-		// twiddle = wavetable();
 		
-		long start = System.nanoTime();
+		long w_start = System.nanoTime();
 		twiddle = wavetable();
-		long end = System.nanoTime();
+		long w_end = System.nanoTime();
 		
-		System.out.println("wavetable(): " + (end - start) / 1e06 + " ms.");
-		
-		scratch = new double[2 * n];
+		System.out.println("Wavetable time: " + (w_end - w_start) / 1e06 + " ms.");
 	}
 
 	/**
@@ -284,21 +283,26 @@ public class Complex {
 	 * @param stride the stride between data points.
 	 * @param sign the sign to apply.
 	 */
-	private void transformInternal(
-			final double[] data, final int offset, final int stride, final int sign) {
+	private void transformInternal(final double[] data, final int offset,
+			final int stride, final int sign) {
+		
 		int product = 1;
 		int state = 0;
+		
 		double[] in;
 		double[] out;
+		
 		int inStride;
 		int outStride;
 		int inStart;
 		int outStart;
+		
 		final int nfactors = factors.length;
 		
 		for (int i = 0; i < nfactors; i++) {
 			final int factor = factors[i];
 			product *= factor;
+			
 			if (state == 0) {
 				in = data;
 				inStart = offset;
@@ -319,48 +323,53 @@ public class Complex {
 			
 			System.out.println("factor = " + factor);
 			
-			TaskSchedule s = new TaskSchedule("s");
+			long pass_start, pass_end;
+			pass_start = System.nanoTime();
 			
-			long start, end;
-			long start2, end2;
-			
-			start = System.nanoTime();
+			/* The methods pass{2..7} have all been patched and annotated so
+			 * that they can be called as parallel tasks. However, I have not
+			 * implemented this, because it would hurt performance.
+			 * 
+			 * For small datasets, the overhead(s) of launching parallel tasks
+			 * is simply to high, compared to even the total time taken for the
+			 * linear execution.
+			 * 
+			 * For large datasets, where it would start making sense to use
+			 * parallel tasks, we run into GPU memory capacity issues.
+			 * TornadoVM does offer a "batch" execution mode, where data is
+			 * fed progressively, in smaller chunks, but it's currently a little
+			 * limited (eg. all passed arrays have to be of the same type & size).
+			 * */
 			
 			switch (factor) {
 				case 2:
-					pass2(i, in, inStart, inStride, out, outStart, outStride, sign, product);
+					pass2(n, twiddle[i], in, inStart, inStride, out,
+						outStart, outStride, sign, product);
 					break;
 				case 3:
-					pass3(i, in, inStart, inStride, out, outStart, outStride, sign, product);
+					pass3(n, twiddle[i], in, inStart, inStride, out,
+						outStart, outStride, sign, product);
 					break;
 				case 4:
-					// pass4(i, in, inStart, inStride, out, outStart, outStride, sign, product);
-					pass4(n, twiddle[i], in, inStart, inStride, out, outStart, outStride, sign, product);
-					
-					// s0.batch("2GB");
-					// s0.task("t" + i, Complex::pass4, n, twiddle[i], in, inStart,
-						// inStride, out, outStart, outStride, sign, product);
-					// s0.streamOut(out);
-					
-					// start2 = System.nanoTime();
-					// s0.execute();
-					// pass4(n, twiddle[i], in, inStart, inStride, out, outStart, outStride, sign, product);
-					// end2 = System.nanoTime();
-					
-					// System.out.println("Exec Time: " + (end2 - start2) / 1e06 + " ms.");
-					
+					pass4(n, twiddle[i], in, inStart, inStride, out,
+						outStart, outStride, sign, product);
 					break;
 				case 5:
-					pass5(i, in, inStart, inStride, out, outStart, outStride, sign, product);
+					pass5(n, twiddle[i], in, inStart, inStride, out,
+						outStart, outStride, sign, product);
 					break;
 				case 6:
-					pass6(i, in, inStart, inStride, out, outStart, outStride, sign, product);
+					pass6(n, twiddle[i], in, inStart, inStride, out,
+						outStart, outStride, sign, product);
 					break;
 				case 7:
-					pass7(i, in, inStart, inStride, out, outStart, outStride, sign, product);
+					pass7(n, twiddle[i], in, inStart, inStride, out,
+						outStart, outStride, sign, product);
 					break;
 				default:
-					/* Asynchronously copy since the first tasks don't need it?
+					TaskSchedule s = new TaskSchedule("s");
+				
+					/* Asynchronously copy, since the first tasks don't need it?
 					 * Don't think it made a performance difference... */
 					s.streamIn(twiddle[i]);
 					
@@ -389,17 +398,19 @@ public class Complex {
 					
 					s.streamOut(out);
 					
-					start2 = System.nanoTime();
-					s.execute();
-					end2 = System.nanoTime();
+					long exec_start, exec_end;
 					
-					System.out.println("Exec Time: " + (end2 - start2) / 1e06 + " ms.");
+					exec_start = System.nanoTime();
+					s.execute();
+					exec_end = System.nanoTime();
+					
+					System.out.println("Exec Time: " + (exec_end - exec_start) / 1e06 + " ms.");
 			}
 			
-			end = System.nanoTime();
-			
-			System.out.println("Total Pass Time: " + (end - start) / 1e06 + " ms.");
+			pass_end = System.nanoTime();
+			System.out.println("Total Time: " + (pass_end - pass_start) / 1e06 + " ms.");
 		}
+		
 		if (state == 1) {
 			for (int i = 0; i < n; i++) {
 				final int i2 = i * 2;
@@ -433,48 +444,31 @@ public class Complex {
 	 * @param sign Sign to apply.
 	 * @param product Product to apply.
 	 */
-	private void pass2(
-			final int fi,
-			final double[] data,
-			final int dataOffset,
-			final int dataStride,
-			final double[] ret,
-			final int retOffset,
-			final int retStride,
-			final int sign,
-			final int product) {
+	private void pass2(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int product) {
 		final int factor = 2;
 		final int m = n / factor;
 		final int q = n / product;
-		final int product_1 = product / factor;
+		final int p_1 = product / factor;
 		final int di = dataStride * m;
-		final int dj = retStride * product_1;
-		
-		// final double[][] twiddles = twiddle[fi];
-		final double[] twiddles = twiddle[fi];
-		
-		// int i = dataOffset;
-		// int j = retOffset;
+		final int dj = retStride * p_1;
 		
 		for (@Parallel int k = 0; k < q; k++) {
-			// final double[] twids = twiddles[k];
-			// final double w_r = twids[0];
-			// final double w_i = -sign * twids[1];
-			
 			final int twid_base =  k * 2 * (factor - 1);
 			final double w_r = twiddles[twid_base + 0];
 			final double w_i = -sign * twiddles[twid_base + 1];
 			
-			for (@Parallel int k1 = 0; k1 < product_1; k1++) {
-				final int i = dataOffset + (k * product_1 + k1) * dataStride;
-				final int j = retOffset + k * dj + (k * product_1 + k1) * retStride;
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				final int i = dataOffset + (k * p_1 + k1) * dataStride;
+				final int j = retOffset + k * dj + (k * p_1 + k1) * retStride;
 				
 				final double z0_r = data[i];
 				final double z0_i = data[i + 1];
 				final int idi = i + di;
 				final double z1_r = data[idi];
 				final double z1_i = data[idi + 1];
-				// i += dataStride;
 				ret[j] = z0_r + z1_r;
 				ret[j + 1] = z0_i + z1_i;
 				final double x_r = z0_r - z1_r;
@@ -482,9 +476,7 @@ public class Complex {
 				final int jdj = j + dj;
 				ret[jdj] = w_r * x_r - w_i * x_i;
 				ret[jdj + 1] = w_r * x_i + w_i * x_r;
-				// j += retStride;
 			}
-			// j += dj;
 		}
 	}
 
@@ -501,42 +493,31 @@ public class Complex {
 	 * @param sign Sign to apply.
 	 * @param product Product to apply.
 	 */
-	private void pass3(
-			final int fi,
-			final double[] data,
-			final int dataOffset,
-			final int dataStride,
-			final double[] ret,
-			final int retOffset,
-			final int retStride,
-			final int sign,
-			final int product) {
+	private void pass3(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int product) {
+		
 		final int factor = 3;
 		final int m = n / factor;
 		final int q = n / product;
-		final int product_1 = product / factor;
+		final int p_1 = product / factor;
 		final double tau = sign * sqrt3_2;
 		final int di = dataStride * m;
-		final int dj = retStride * product_1;
+		final int dj = retStride * p_1;
 		final int jstep = (factor - 1) * dj;
-		// final double[][] twiddles = twiddle[fi];
-		final double[] twiddles = twiddle[fi];
-		int i = dataOffset;
-		int j = retOffset;
-		for (int k = 0; k < q; k++) {
-			// final double[] twids = twiddles[k];
-			// final double w1_r = twids[0];
-			// final double w1_i = -sign * twids[1];
-			// final double w2_r = twids[2];
-			// final double w2_i = -sign * twids[3];
-			
+		
+		for (@Parallel int k = 0; k < q; k++) {
 			final int twid_base =  k * 2 * (factor - 1);
 			final double w1_r = twiddles[twid_base + 0];
 			final double w1_i = -sign * twiddles[twid_base + 1];
 			final double w2_r = twiddles[twid_base + 2];
 			final double w2_i = -sign * twiddles[twid_base + 3];
 			
-			for (int k1 = 0; k1 < product_1; k1++) {
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				final int i = dataOffset + (k * p_1 + k1) * dataStride;
+				final int j = retOffset + k * jstep + (k * p_1 + k1) * retStride;
+				
 				final double z0_r = data[i];
 				final double z0_i = data[i + 1];
 				int idi = i + di;
@@ -545,7 +526,6 @@ public class Complex {
 				idi += di;
 				final double z2_r = data[idi];
 				final double z2_i = data[idi + 1];
-				i += dataStride;
 				final double t1_r = z1_r + z2_r;
 				final double t1_i = z1_i + z2_i;
 				final double t2_r = z0_r - t1_r * 0.5;
@@ -564,9 +544,7 @@ public class Complex {
 				jdj += dj;
 				ret[jdj] = w2_r * x_r - w2_i * x_i;
 				ret[jdj + 1] = w2_r * x_i + w2_i * x_r;
-				j += retStride;
 			}
-			j += jstep;
 		}
 	}
 
@@ -583,18 +561,11 @@ public class Complex {
 	 * @param sign Sign to apply.
 	 * @param product Product to apply.
 	 */
-	private static void pass4(
-			final int n,
-			// final int fi,
-			final double[] twiddles,
-			final double[] data,
-			final int dataOffset,
-			final int dataStride,
-			final double[] ret,
-			final int retOffset,
-			final int retStride,
-			final int sign,
-			final int product) {
+	private static void pass4(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int product) {
+		
 		final int factor = 4;
 		final int m = n / factor;
 		final int q = n / product;
@@ -603,21 +574,7 @@ public class Complex {
 		final int dj = retStride * p_1;
 		final int jstep = (factor - 1) * dj;
 		
-		// final double[][] twiddles = twiddle[fi];
-		// final double[] twiddles = twiddle[fi];
-		
-		// int i = dataOffset;
-		// int j = retOffset;
-		
-		for (@Parallel int k = 0; k < q; k++) {
-			// final double[] twids = twiddles[k];
-			// final double w1_r = twids[0];
-			// final double w1_i = -sign * twids[1];
-			// final double w2_r = twids[2];
-			// final double w2_i = -sign * twids[3];
-			// final double w3_r = twids[4];
-			// final double w3_i = -sign * twids[5];
-			
+		for (@Parallel int k = 0; k < q; k++) {	
 			final int twid_base =  k * 2 * (factor - 1);
 			final double w1_r = twiddles[twid_base + 0];
 			final double w1_i = -sign * twiddles[twid_base + 1];
@@ -641,7 +598,6 @@ public class Complex {
 				idi += di;
 				final double z3_r = data[idi];
 				final double z3_i = data[idi + 1];
-				// i += dataStride;
 				final double t1_r = z0_r + z2_r;
 				final double t1_i = z0_i + z2_i;
 				final double t2_r = z1_r + z3_r;
@@ -667,9 +623,7 @@ public class Complex {
 				jdj += dj;
 				ret[jdj] = w3_r * x_r - w3_i * x_i;
 				ret[jdj + 1] = w3_r * x_i + w3_i * x_r;
-				// j += retStride;
 			}
-			// j += jstep;
 		}
 	}
 
@@ -686,16 +640,10 @@ public class Complex {
 	 * @param sign Sign to apply.
 	 * @param product Product to apply.
 	 */
-	private void pass5(
-			final int fi,
-			final double[] data,
-			final int dataOffset,
-			final int dataStride,
-			final double[] ret,
-			final int retOffset,
-			final int retStride,
-			final int sign,
-			final int product) {
+	private void pass5(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int product) {
 		final int factor = 5;
 		final int m = n / factor;
 		final int q = n / product;
@@ -706,21 +654,8 @@ public class Complex {
 		final int di = dataStride * m;
 		final int dj = retStride * p_1;
 		final int jstep = (factor - 1) * dj;
-		// final double[][] twiddles = twiddle[fi];
-		final double[] twiddles = twiddle[fi];
-		int i = dataOffset;
-		int j = retOffset;
-		for (int k = 0; k < q; k++) {
-			// final double[] twids = twiddles[k];
-			// final double w1r = twids[0];
-			// final double w1i = -sign * twids[1];
-			// final double w2r = twids[2];
-			// final double w2i = -sign * twids[3];
-			// final double w3r = twids[4];
-			// final double w3i = -sign * twids[5];
-			// final double w4r = twids[6];
-			// final double w4i = -sign * twids[7];
-			
+		
+		for (@Parallel int k = 0; k < q; k++) {
 			final int twid_base =  k * 2 * (factor - 1);
 			final double w1r = twiddles[twid_base + 0];
 			final double w1i = -sign * twiddles[twid_base + 1];
@@ -731,7 +666,10 @@ public class Complex {
 			final double w4r = twiddles[twid_base + 6];
 			final double w4i = -sign * twiddles[twid_base + 7];
 			
-			for (int k1 = 0; k1 < p_1; k1++) {
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				final int i = dataOffset + (k * p_1 + k1) * dataStride;
+				final int j = retOffset + k * jstep + (k * p_1 + k1) * retStride;
+				
 				final double z0r = data[i];
 				final double z0i = data[i + 1];
 				int idi = i + di;
@@ -746,7 +684,6 @@ public class Complex {
 				idi += di;
 				final double z4r = data[idi];
 				final double z4i = data[idi + 1];
-				i += dataStride;
 				final double t1r = z1r + z4r;
 				final double t1i = z1i + z4i;
 				final double t2r = z2r + z3r;
@@ -791,9 +728,7 @@ public class Complex {
 				jdj += dj;
 				ret[jdj] = w4r * xr - w4i * xi;
 				ret[jdj + 1] = w4r * xi + w4i * xr;
-				j += retStride;
 			}
-			j += jstep;
 		}
 	}
 
@@ -810,16 +745,10 @@ public class Complex {
 	 * @param sign Sign to apply.
 	 * @param product Product to apply.
 	 */
-	private void pass6(
-			final int fi,
-			final double[] data,
-			final int dataOffset,
-			final int dataStride,
-			final double[] ret,
-			final int retOffset,
-			final int retStride,
-			final int sign,
-			final int product) {
+	private void pass6(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int product) {
 		final int factor = 6;
 		final int m = n / factor;
 		final int q = n / product;
@@ -828,23 +757,8 @@ public class Complex {
 		final int di = dataStride * m;
 		final int dj = retStride * p_1;
 		final int jstep = (factor - 1) * dj;
-		// final double[][] twiddles = twiddle[fi];
-		final double[] twiddles = twiddle[fi];
-		int i = dataOffset;
-		int j = retOffset;
-		for (int k = 0; k < q; k++) {
-			// final double[] twids = twiddles[k];
-			// final double w1r = twids[0];
-			// final double w1i = -sign * twids[1];
-			// final double w2r = twids[2];
-			// final double w2i = -sign * twids[3];
-			// final double w3r = twids[4];
-			// final double w3i = -sign * twids[5];
-			// final double w4r = twids[6];
-			// final double w4i = -sign * twids[7];
-			// final double w5r = twids[8];
-			// final double w5i = -sign * twids[9];
-			
+		
+		for (@Parallel  int k = 0; k < q; k++) {
 			final int twid_base =  k * 2 * (factor - 1);
 			final double w1r = twiddles[twid_base + 0];
 			final double w1i = -sign * twiddles[twid_base + 1];
@@ -857,7 +771,10 @@ public class Complex {
 			final double w5r = twiddles[twid_base + 8];
 			final double w5i = -sign * twiddles[twid_base + 9];
 			
-			for (int k1 = 0; k1 < p_1; k1++) {
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				final int i = dataOffset + (k * p_1 + k1) * dataStride;
+				final int j = retOffset + k * jstep + (k * p_1 + k1) * retStride;
+				
 				final double z0r = data[i];
 				final double z0i = data[i + 1];
 				int idi = i + di;
@@ -875,7 +792,6 @@ public class Complex {
 				idi += di;
 				final double z5r = data[idi];
 				final double z5i = data[idi + 1];
-				i += dataStride;
 				final double ta1r = z2r + z4r;
 				final double ta1i = z2i + z4i;
 				final double ta2r = z0r - ta1r * 0.5;
@@ -927,9 +843,7 @@ public class Complex {
 				jdj += dj;
 				ret[jdj] = w5r * xr - w5i * xi;
 				ret[jdj + 1] = w5r * xi + w5i * xr;
-				j += retStride;
 			}
-			j += jstep;
 		}
 	}
 
@@ -946,16 +860,10 @@ public class Complex {
 	 * @param sign Sign to apply.
 	 * @param product Product to apply.
 	 */
-	private void pass7(
-			final int fi,
-			final double[] data,
-			final int dataOffset,
-			final int dataStride,
-			final double[] ret,
-			final int retOffset,
-			final int retStride,
-			final int sign,
-			final int product) {
+	private void pass7(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int product) {
 		final int factor = 7;
 		final int m = n / factor;
 		final int q = n / product;
@@ -969,25 +877,8 @@ public class Complex {
 		final int di = dataStride * m;
 		final int dj = retStride * p_1;
 		final int jstep = (factor - 1) * dj;
-		// final double[][] twiddles = twiddle[fi];
-		final double[] twiddles = twiddle[fi];
-		int i = dataOffset;
-		int j = retOffset;
-		for (int k = 0; k < q; k++) {
-			// final double[] twids = twiddles[k];
-			// final double w1r = twids[0];
-			// final double w1i = -sign * twids[1];
-			// final double w2r = twids[2];
-			// final double w2i = -sign * twids[3];
-			// final double w3r = twids[4];
-			// final double w3i = -sign * twids[5];
-			// final double w4r = twids[6];
-			// final double w4i = -sign * twids[7];
-			// final double w5r = twids[8];
-			// final double w5i = -sign * twids[9];
-			// final double w6r = twids[10];
-			// final double w6i = -sign * twids[11];
-			
+		
+		for (@Parallel int k = 0; k < q; k++) {
 			final int twid_base =  k * 2 * (factor - 1);
 			final double w1r = twiddles[twid_base + 0];
 			final double w1i = -sign * twiddles[twid_base + 1];
@@ -1002,7 +893,10 @@ public class Complex {
 			final double w6r = twiddles[twid_base + 10];
 			final double w6i = -sign * twiddles[twid_base + 11];
 			
-			for (int k1 = 0; k1 < p_1; k1++) {
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				final int i = dataOffset + (k * p_1 + k1) * dataStride;
+				final int j = retOffset + k * jstep + (k * p_1 + k1) * retStride;
+				
 				final double z0r = data[i];
 				final double z0i = data[i + 1];
 				int idi = i + di;
@@ -1023,7 +917,6 @@ public class Complex {
 				idi += di;
 				final double z6r = data[idi];
 				final double z6i = data[idi + 1];
-				i += dataStride;
 				final double t0r = z1r + z6r;
 				final double t0i = z1i + z6i;
 				final double t1r = z1r - z6r;
@@ -1116,9 +1009,7 @@ public class Complex {
 				jdj += dj;
 				ret[jdj] = w6r * xr - w6i * xi;
 				ret[jdj + 1] = w6r * xi + w6i * xr;
-				j += retStride;
 			}
-			j += jstep;
 		}
 	}
 	
