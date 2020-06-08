@@ -18,6 +18,10 @@ classes = $(shell echo "$(sources)" | sed "s|$(SRC)|$(CLASS)|g" | sed 's/\.java/
 # --------------
 
 tornado_options = -Dtornado.heap.allocation=2GB
+# -Dtornado.fullDebug=true
+# -Dtornado.profiler=true
+# --debug
+
 profiler_options = $(tornado_options) -XX:StartFlightRecording=dumponexit=true,filename=fft.jfr
 
 # --------------

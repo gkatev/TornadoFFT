@@ -296,8 +296,6 @@ public class Complex {
 		int outStart;
 		final int nfactors = factors.length;
 		
-		TaskSchedule s0 = new TaskSchedule("s0");
-		
 		for (int i = 0; i < nfactors; i++) {
 			final int factor = factors[i];
 			product *= factor;
@@ -321,6 +319,8 @@ public class Complex {
 			
 			System.out.println("factor = " + factor);
 			
+			TaskSchedule s = new TaskSchedule("s");
+			
 			long start, end;
 			long start2, end2;
 			
@@ -335,19 +335,19 @@ public class Complex {
 					break;
 				case 4:
 					// pass4(i, in, inStart, inStride, out, outStart, outStride, sign, product);
+					pass4(n, twiddle[i], in, inStart, inStride, out, outStart, outStride, sign, product);
+					
+					// s0.batch("2GB");
+					// s0.task("t" + i, Complex::pass4, n, twiddle[i], in, inStart,
+						// inStride, out, outStart, outStride, sign, product);
+					// s0.streamOut(out);
+					
+					// start2 = System.nanoTime();
+					// s0.execute();
 					// pass4(n, twiddle[i], in, inStart, inStride, out, outStart, outStride, sign, product);
+					// end2 = System.nanoTime();
 					
-					s0.batch("2GB");
-					s0.task("t" + i, Complex::pass4, n, twiddle[i], in, inStart,
-						inStride, out, outStart, outStride, sign, product);
-					s0.streamOut(out);
-					
-					start2 = System.nanoTime();
-					s0.execute();
-					// pass4(n, twiddle[i], in, inStart, inStride, out, outStart, outStride, sign, product);
-					end2 = System.nanoTime();
-					
-					System.out.println("Exec Time: " + (end2 - start2) / 1e06 + " ms.");
+					// System.out.println("Exec Time: " + (end2 - start2) / 1e06 + " ms.");
 					
 					break;
 				case 5:
@@ -360,14 +360,45 @@ public class Complex {
 					pass7(i, in, inStart, inStride, out, outStart, outStride, sign, product);
 					break;
 				default:
-					// passOddN agrees with pass{3, 5 and 7}
-					// passOdd(i, in, inStart, inStride, out, outStart, outStride, sign, factor, product);
-					passOdd(n, twiddle[i], in, inStart, inStride, out, outStart, outStride, sign, factor, product);
+					/* Asynchronously copy since the first tasks don't need it?
+					 * Don't think it made a performance difference... */
+					s.streamIn(twiddle[i]);
+					
+					s.task("t" + i + "_1", Complex::passOddStep1, n, in, inStart,
+						inStride, out, outStart, outStride, factor);
+					s.task("t" + i + "_2", Complex::passOddStep2, n, in, inStart,
+						inStride, out, outStart, outStride, factor);
+					s.task("t" + i + "_3", Complex::passOddStep3, n, in, inStart,
+						inStride, out, outStart, outStride, factor);
+					s.task("t" + i + "_4", Complex::passOddStep4, n, in, inStart,
+						inStride, out, outStart, outStride, factor);
+					s.task("t" + i + "_5", Complex::passOddStep5, n, in, inStart,
+						inStride, out, outStart, outStride, factor, product);
+					s.task("t" + i + "_6", Complex::passOddStep6, n, twiddle[i],
+						in, inStart, inStride, out, outStart, outStride, sign,
+						factor, product, 0, 0, 0, 0);
+					s.task("t" + i + "_7", Complex::passOddStep7, n, in, inStart,
+						inStride, out, outStart, outStride, factor, product);
+					s.task("t" + i + "_8", Complex::passOddStep8, n, in, inStart,
+						inStride, out, outStart, outStride, factor, product);
+					s.task("t" + i + "_9", Complex::passOddStep9, n, in, inStart,
+						inStride, out, outStart, outStride, factor, product);
+					s.task("t" + i + "_10", Complex::passOddStep10, n, twiddle[i],
+						in, inStart, inStride, out, outStart, outStride, sign,
+						factor, product, 0, 0, 0, 0);
+					
+					s.streamOut(out);
+					
+					start2 = System.nanoTime();
+					s.execute();
+					end2 = System.nanoTime();
+					
+					System.out.println("Exec Time: " + (end2 - start2) / 1e06 + " ms.");
 			}
 			
 			end = System.nanoTime();
 			
-			System.out.println("pass time: " + (end - start) / 1e06 + " ms.");
+			System.out.println("Total Pass Time: " + (end - start) / 1e06 + " ms.");
 		}
 		if (state == 1) {
 			for (int i = 0; i < n; i++) {
@@ -1105,7 +1136,7 @@ public class Complex {
 	 * @param factor Factor to apply.
 	 * @param product Product to apply.
 	 */
-	private void passOdd(
+	/* private static void passOdd(
 			final int n,
 			// final int fi,
 			final double[] twiddles,
@@ -1117,19 +1148,27 @@ public class Complex {
 			final int retStride,
 			final int sign,
 			final int factor,
-			final int product) {
+			final int product,
+			final int dummy12,
+			final int dummy13,
+			final int dummy14,
+			final int dummy15) {
+		
 		final int m = n / factor;
 		final int q = n / product;
 		final int p_1 = product / factor;
 		final int jump = (factor - 1) * p_1;
+		
 		for (@Parallel int i = 0; i < m; i++) {
 			ret[retOffset + retStride * i] = data[dataOffset + dataStride * i];
 			ret[retOffset + retStride * i + 1] = data[dataOffset + dataStride * i + 1];
 		}
+		
 		for (@Parallel int e = 1; e < (factor - 1) / 2 + 1; e++) {
-			for (int i = 0; i < m; i++) {
-				int idx = i + e * m;
-				int idxc = i + (factor - e) * m;
+			for (@Parallel int i = 0; i < m; i++) {
+				final int idx = i + e * m;
+				final int idxc = i + (factor - e) * m;
+				
 				ret[retOffset + retStride * idx] =
 						data[dataOffset + dataStride * idx] + data[dataOffset + dataStride * idxc];
 				ret[retOffset + retStride * idx + 1] =
@@ -1140,12 +1179,14 @@ public class Complex {
 						data[dataOffset + dataStride * idx + 1] - data[dataOffset + dataStride * idxc + 1];
 			}
 		}
+		
 		for (@Parallel int i = 0; i < m; i++) {
 			data[dataOffset + dataStride * i] = ret[retOffset + retStride * i];
 			data[dataOffset + dataStride * i + 1] = ret[retOffset + retStride * i + 1];
 		}
+		
 		for (@Parallel int e1 = 1; e1 < (factor - 1) / 2 + 1; e1++) {
-			for (int i = 0; i < m; i++) {
+			for (@Parallel int i = 0; i < m; i++) {
 				data[dataOffset + dataStride * i] += ret[retOffset + retStride * (i + e1 * m)];
 				data[dataOffset + dataStride * i + 1] += ret[retOffset + retStride * (i + e1 * m) + 1];
 			}
@@ -1154,14 +1195,14 @@ public class Complex {
 		// double[] twiddl = twiddle[fi][q];
 		// double[] twiddl = twiddle[fi];
 		
-		for (int e = 1; e < (factor - 1) / 2 + 1; e++) {
+		for (@Parallel int e = 1; e < (factor - 1) / 2 + 1; e++) {
 			// int idx = e;
 			// double wr, wi;
 			
 			final int em = e * m;
 			final int ecm = (factor - e) * m;
 			
-			for (int i = 0; i < m; i++) {
+			for (@Parallel int i = 0; i < m; i++) {
 				data[dataOffset + dataStride * (i + em)] = ret[retOffset + retStride * i];
 				data[dataOffset + dataStride * (i + em) + 1] = ret[retOffset + retStride * i + 1];
 				data[dataOffset + dataStride * (i + ecm)] = ret[retOffset + retStride * i];
@@ -1188,10 +1229,10 @@ public class Complex {
 					wi = -sign * twiddles[twid_base + 2 * (idx - 1) + 1];
 				}
 				for (@Parallel int i = 0; i < m; i++) {
-					double ap = wr * ret[retOffset + retStride * (i + e1 * m)];
-					double am = wi * ret[retOffset + retStride * (i + (factor - e1) * m) + 1];
-					double bp = wr * ret[retOffset + retStride * (i + e1 * m) + 1];
-					double bm = wi * ret[retOffset + retStride * (i + (factor - e1) * m)];
+					final double ap = wr * ret[retOffset + retStride * (i + e1 * m)];
+					final double am = wi * ret[retOffset + retStride * (i + (factor - e1) * m) + 1];
+					final double bp = wr * ret[retOffset + retStride * (i + e1 * m) + 1];
+					final double bm = wi * ret[retOffset + retStride * (i + (factor - e1) * m)];
 					data[dataOffset + dataStride * (i + em)] += (ap - am);
 					data[dataOffset + dataStride * (i + em) + 1] += (bp + bm);
 					data[dataOffset + dataStride * (i + ecm)] += (ap + am);
@@ -1201,11 +1242,13 @@ public class Complex {
 				// idx %= factor;
 			}
 		}
-		/* k = 0 */
+		
+		// k = 0
 		for (@Parallel int k1 = 0; k1 < p_1; k1++) {
 			ret[retOffset + retStride * k1] = data[dataOffset + dataStride * k1];
 			ret[retOffset + retStride * k1 + 1] = data[dataOffset + dataStride * k1 + 1];
 		}
+		
 		for (@Parallel int e1 = 1; e1 < factor; e1++) {
 			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
 				ret[retOffset + retStride * (k1 + e1 * p_1)] =
@@ -1214,6 +1257,7 @@ public class Complex {
 						data[dataOffset + dataStride * (k1 + e1 * m) + 1];
 			}
 		}
+		
 		// int i = p_1;
 		// int j = product;
 		for (@Parallel int k = 1; k < q; k++) {
@@ -1228,6 +1272,7 @@ public class Complex {
 			}
 			// j += jump;
 		}
+		
 		// i = p_1;
 		// j = product;
 		for (@Parallel int k = 1; k < q; k++) {
@@ -1240,14 +1285,14 @@ public class Complex {
 					final int i = p_1 + (k - 1) * p_1 + k1;
 					final int j = product + (k - 1) * (p_1 + jump) + k1;
 					
-					double xr = data[dataOffset + dataStride * (i + e1 * m)];
-					double xi = data[dataOffset + dataStride * (i + e1 * m) + 1];
+					final double xr = data[dataOffset + dataStride * (i + e1 * m)];
+					final double xi = data[dataOffset + dataStride * (i + e1 * m) + 1];
 					
 					// double wr = twiddl[2 * (e1 - 1)];
 					// double wi = -sign * twiddl[2 * (e1 - 1) + 1];
 					
-					double wr = twiddles[twid_base + 2 * (e1 - 1)];
-					double wi = -sign * twiddles[twid_base + 2 * (e1 - 1) + 1];
+					final double wr = twiddles[twid_base + 2 * (e1 - 1)];
+					final double wi = -sign * twiddles[twid_base + 2 * (e1 - 1) + 1];
 					
 					ret[retOffset + retStride * (j + e1 * p_1)] = wr * xr - wi * xi;
 					ret[retOffset + retStride * (j + e1 * p_1) + 1] = wr * xi + wi * xr;
@@ -1257,6 +1302,212 @@ public class Complex {
 			}
 			// j += jump;
 		}
+	} */
+	
+	private static void passOddStep1(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor) {
+		
+		final int m = n / factor;
+		
+		for (@Parallel int i = 0; i < m; i++) {
+			ret[retOffset + retStride * i] = data[dataOffset + dataStride * i];
+			ret[retOffset + retStride * i + 1] = data[dataOffset + dataStride * i + 1];
+		}
+	}
+	
+	private static void passOddStep2(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor) {
+		
+		final int m = n / factor;
+		
+		for (@Parallel int e = 1; e < (factor - 1) / 2 + 1; e++) {
+			for (@Parallel int i = 0; i < m; i++) {
+				final int idx = i + e * m;
+				final int idxc = i + (factor - e) * m;
+				
+				ret[retOffset + retStride * idx] =
+						data[dataOffset + dataStride * idx] + data[dataOffset + dataStride * idxc];
+				ret[retOffset + retStride * idx + 1] =
+						data[dataOffset + dataStride * idx + 1] + data[dataOffset + dataStride * idxc + 1];
+				ret[retOffset + retStride * idxc] =
+						data[dataOffset + dataStride * idx] - data[dataOffset + dataStride * idxc];
+				ret[retOffset + retStride * idxc + 1] =
+						data[dataOffset + dataStride * idx + 1] - data[dataOffset + dataStride * idxc + 1];
+			}
+		}
+	}
+	
+	private static void passOddStep3(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor) {
+		
+		final int m = n / factor;
+		
+		for (@Parallel int i = 0; i < m; i++) {
+			data[dataOffset + dataStride * i] = ret[retOffset + retStride * i];
+			data[dataOffset + dataStride * i + 1] = ret[retOffset + retStride * i + 1];
+		}
+	}
+	
+	private static void passOddStep4(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor) {
+		
+		final int m = n / factor;
+		
+		for (@Parallel int e1 = 1; e1 < (factor - 1) / 2 + 1; e1++) {
+			for (@Parallel int i = 0; i < m; i++) {
+				data[dataOffset + dataStride * i] += ret[retOffset + retStride * (i + e1 * m)];
+				data[dataOffset + dataStride * i + 1] += ret[retOffset + retStride * (i + e1 * m) + 1];
+			}
+		}
+	}
+	
+	private static void passOddStep5(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor,
+			final int product) {
+		
+		final int m = n / factor;
+		final int q = n / product;
+		
+		for (@Parallel int e = 1; e < (factor - 1) / 2 + 1; e++) {
+			final int em = e * m;
+			final int ecm = (factor - e) * m;
+			
+			for (@Parallel int i = 0; i < m; i++) {
+				data[dataOffset + dataStride * (i + em)] = ret[retOffset + retStride * i];
+				data[dataOffset + dataStride * (i + em) + 1] = ret[retOffset + retStride * i + 1];
+				data[dataOffset + dataStride * (i + ecm)] = ret[retOffset + retStride * i];
+				data[dataOffset + dataStride * (i + ecm) + 1] = ret[retOffset + retStride * i + 1];
+			}
+		}
+	}
+	
+	private static void passOddStep6(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int factor, final int product,
+			final int dummy12, final int dummy13, final int dummy14,
+			final int dummy15) {
+		
+		final int m = n / factor;
+		final int q = n / product;
+		
+		for (@Parallel int e = 1; e < (factor - 1) / 2 + 1; e++) {
+			final int em = e * m;
+			final int ecm = (factor - e) * m;
+			
+			final int twid_base =  q * 2 * (factor - 1);
+			
+			for (@Parallel int e1 = 1; e1 < (factor - 1) / 2 + 1; e1++) {
+				final int idx = (e + (e1 - 1) * e) % factor;
+				
+				for (@Parallel int i = 0; i < m; i++) {
+					double wr = 1, wi = 0;
+					
+					if(idx != 0) {
+						wr = twiddles[twid_base + 2 * (idx - 1)];
+						wi = -sign * twiddles[twid_base + 2 * (idx - 1) + 1];
+					}
+					
+					final double ap = wr * ret[retOffset + retStride * (i + e1 * m)];
+					final double am = wi * ret[retOffset + retStride * (i + (factor - e1) * m) + 1];
+					final double bp = wr * ret[retOffset + retStride * (i + e1 * m) + 1];
+					final double bm = wi * ret[retOffset + retStride * (i + (factor - e1) * m)];
+					data[dataOffset + dataStride * (i + em)] += (ap - am);
+					data[dataOffset + dataStride * (i + em) + 1] += (bp + bm);
+					data[dataOffset + dataStride * (i + ecm)] += (ap + am);
+					data[dataOffset + dataStride * (i + ecm) + 1] += (bp - bm);
+				}
+			}
+		}
+	}
+	
+	private static void passOddStep7(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor,
+			final int product) {
+		
+		final int p_1 = product / factor;
+		
+		for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+			ret[retOffset + retStride * k1] = data[dataOffset + dataStride * k1];
+			ret[retOffset + retStride * k1 + 1] = data[dataOffset + dataStride * k1 + 1];
+		}
+	}
+	
+	private static void passOddStep8(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor,
+			final int product) {
+		
+		final int m = n / factor;
+		final int p_1 = product / factor;
+		
+		for (@Parallel int e1 = 1; e1 < factor; e1++) {
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				ret[retOffset + retStride * (k1 + e1 * p_1)] =
+						data[dataOffset + dataStride * (k1 + e1 * m)];
+				ret[retOffset + retStride * (k1 + e1 * p_1) + 1] =
+						data[dataOffset + dataStride * (k1 + e1 * m) + 1];
+			}
+		}
+	}
+	
+	private static void passOddStep9(final int n, final double[] data,
+			final int dataOffset, final int dataStride, final double[] ret,
+			final int retOffset, final int retStride, final int factor,
+			final int product) {
+		
+		final int q = n / product;
+		final int p_1 = product / factor;
+		final int jump = (factor - 1) * p_1;
+		
+		for (@Parallel int k = 1; k < q; k++) {
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				final int i = p_1 + (k - 1) * p_1 + k1;
+				final int j = product + (k - 1) * (p_1 + jump) + k1;
+				
+				ret[retOffset + retStride * j] = data[dataOffset + dataStride * i];
+				ret[retOffset + retStride * j + 1] = data[dataOffset + dataStride * i + 1];
+			}
+		}
+	}
+	
+	private static void passOddStep10(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int factor, final int product,
+			final int dummy12, final int dummy13, final int dummy14,
+			final int dummy15) {
+		
+		final int m = n / factor;
+		final int q = n / product;
+		final int p_1 = product / factor;
+		final int jump = (factor - 1) * p_1;
+		
+		for (@Parallel int k = 1; k < q; k++) {
+			final int twid_base =  k * 2 * (factor - 1);
+			
+			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
+				for (@Parallel int e1 = 1; e1 < factor; e1++) {
+					final int i = p_1 + (k - 1) * p_1 + k1;
+					final int j = product + (k - 1) * (p_1 + jump) + k1;
+					
+					final double xr = data[dataOffset + dataStride * (i + e1 * m)];
+					final double xi = data[dataOffset + dataStride * (i + e1 * m) + 1];
+					
+					final double wr = twiddles[twid_base + 2 * (e1 - 1)];
+					final double wi = -sign * twiddles[twid_base + 2 * (e1 - 1) + 1];
+					
+					ret[retOffset + retStride * (j + e1 * p_1)] = wr * xr - wi * xi;
+					ret[retOffset + retStride * (j + e1 * p_1) + 1] = wr * xi + wi * xr;
+				}
+			}
+		}
 	}
 	
 	/**
@@ -1265,6 +1516,7 @@ public class Complex {
 	 * @return twiddle factors.
 	 */
 	private double[][] wavetable() {
+		// return wavetable_p();
 		return wavetable_l();
 	}
 	
@@ -1311,7 +1563,7 @@ public class Complex {
 		return ret;
 	}
 	
-	/* private double[][] wavetable() {
+	/* private double[][] wavetable_p() {
 		if(n < 2)
 			return null;
 		
@@ -1328,22 +1580,16 @@ public class Complex {
 			
 			twid[i] = new double[(q + 1) * (2 * (factors[i] - 1))];
 			
-			s0.task("t" + i, FFTTest2::wavetable_sp, n, factors[i], q, product_1, twid[i]);
+			s0.task("t" + i, FFTTest2::wavetable_pk, n, factors[i], q, product_1, twid[i]);
 			s0.streamOut(twid[i]);
 		}
 		
-		// long start, end;
-		
-		// start = System.nanoTime();
 		s0.execute();
-		// end = System.nanoTime();
-		
-		// System.out.println("s0.execute(): " + (end - start) / 1e06 + " ms.");
 		
 		return twid;
 	} */
 	
-	/* private static void wavetable_p(int n, int factor, int q, int product_1, double[] twid) {
+	/* private static void wavetable_pk(int n, int factor, int q, int product_1, double[] twid) {
 		for(@Parallel int j = 0; j < factor - 1; j++) {
 			twid[2 * j] = 1.0;
 			twid[2 * j + 1] = 0.0;
