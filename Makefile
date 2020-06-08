@@ -17,7 +17,7 @@ classes = $(shell echo "$(sources)" | sed "s|$(SRC)|$(CLASS)|g" | sed 's/\.java/
 
 # --------------
 
-tornado_options = -Dtornado.heap.allocation=2GB
+tornado_options = -Dtornado.heap.allocation=2GB -Dtornado.profiler=true
 # -Dtornado.fullDebug=true
 # -Dtornado.profiler=true
 # --debug

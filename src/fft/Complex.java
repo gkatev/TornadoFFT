@@ -1121,188 +1121,6 @@ public class Complex {
 			j += jstep;
 		}
 	}
-
-	/**
-	 * Note that passOdd is only intended for odd factors (and fails for even factors).
-	 *
-	 * @param fi Twiddle factor to use.
-	 * @param data The data to transform.
-	 * @param dataOffset Offset to the beginning of the data.
-	 * @param dataStride Stride between data points.
-	 * @param ret The transformed data.
-	 * @param retOffset Offset to the returned data.
-	 * @param retStride Stride between returned data points.
-	 * @param sign Sign to apply.
-	 * @param factor Factor to apply.
-	 * @param product Product to apply.
-	 */
-	/* private static void passOdd(
-			final int n,
-			// final int fi,
-			final double[] twiddles,
-			final double[] data,
-			final int dataOffset,
-			final int dataStride,
-			final double[] ret,
-			final int retOffset,
-			final int retStride,
-			final int sign,
-			final int factor,
-			final int product,
-			final int dummy12,
-			final int dummy13,
-			final int dummy14,
-			final int dummy15) {
-		
-		final int m = n / factor;
-		final int q = n / product;
-		final int p_1 = product / factor;
-		final int jump = (factor - 1) * p_1;
-		
-		for (@Parallel int i = 0; i < m; i++) {
-			ret[retOffset + retStride * i] = data[dataOffset + dataStride * i];
-			ret[retOffset + retStride * i + 1] = data[dataOffset + dataStride * i + 1];
-		}
-		
-		for (@Parallel int e = 1; e < (factor - 1) / 2 + 1; e++) {
-			for (@Parallel int i = 0; i < m; i++) {
-				final int idx = i + e * m;
-				final int idxc = i + (factor - e) * m;
-				
-				ret[retOffset + retStride * idx] =
-						data[dataOffset + dataStride * idx] + data[dataOffset + dataStride * idxc];
-				ret[retOffset + retStride * idx + 1] =
-						data[dataOffset + dataStride * idx + 1] + data[dataOffset + dataStride * idxc + 1];
-				ret[retOffset + retStride * idxc] =
-						data[dataOffset + dataStride * idx] - data[dataOffset + dataStride * idxc];
-				ret[retOffset + retStride * idxc + 1] =
-						data[dataOffset + dataStride * idx + 1] - data[dataOffset + dataStride * idxc + 1];
-			}
-		}
-		
-		for (@Parallel int i = 0; i < m; i++) {
-			data[dataOffset + dataStride * i] = ret[retOffset + retStride * i];
-			data[dataOffset + dataStride * i + 1] = ret[retOffset + retStride * i + 1];
-		}
-		
-		for (@Parallel int e1 = 1; e1 < (factor - 1) / 2 + 1; e1++) {
-			for (@Parallel int i = 0; i < m; i++) {
-				data[dataOffset + dataStride * i] += ret[retOffset + retStride * (i + e1 * m)];
-				data[dataOffset + dataStride * i + 1] += ret[retOffset + retStride * (i + e1 * m) + 1];
-			}
-		}
-		
-		// double[] twiddl = twiddle[fi][q];
-		// double[] twiddl = twiddle[fi];
-		
-		for (@Parallel int e = 1; e < (factor - 1) / 2 + 1; e++) {
-			// int idx = e;
-			// double wr, wi;
-			
-			final int em = e * m;
-			final int ecm = (factor - e) * m;
-			
-			for (@Parallel int i = 0; i < m; i++) {
-				data[dataOffset + dataStride * (i + em)] = ret[retOffset + retStride * i];
-				data[dataOffset + dataStride * (i + em) + 1] = ret[retOffset + retStride * i + 1];
-				data[dataOffset + dataStride * (i + ecm)] = ret[retOffset + retStride * i];
-				data[dataOffset + dataStride * (i + ecm) + 1] = ret[retOffset + retStride * i + 1];
-			}
-			
-			final int twid_base =  q * 2 * (factor - 1);
-			
-			// int idx = e;
-			
-			for (@Parallel int e1 = 1; e1 < (factor - 1) / 2 + 1; e1++) {
-				double wr, wi;
-				
-				final int idx = (e + (e1 - 1) * e) % factor;
-				
-				if (idx == 0) {
-					wr = 1;
-					wi = 0;
-				} else {
-					// wr = twiddl[2 * (idx - 1)];
-					// wi = -sign * twiddl[2 * (idx - 1) + 1];
-					
-					wr = twiddles[twid_base + 2 * (idx - 1)];
-					wi = -sign * twiddles[twid_base + 2 * (idx - 1) + 1];
-				}
-				for (@Parallel int i = 0; i < m; i++) {
-					final double ap = wr * ret[retOffset + retStride * (i + e1 * m)];
-					final double am = wi * ret[retOffset + retStride * (i + (factor - e1) * m) + 1];
-					final double bp = wr * ret[retOffset + retStride * (i + e1 * m) + 1];
-					final double bm = wi * ret[retOffset + retStride * (i + (factor - e1) * m)];
-					data[dataOffset + dataStride * (i + em)] += (ap - am);
-					data[dataOffset + dataStride * (i + em) + 1] += (bp + bm);
-					data[dataOffset + dataStride * (i + ecm)] += (ap + am);
-					data[dataOffset + dataStride * (i + ecm) + 1] += (bp - bm);
-				}
-				// idx += e;
-				// idx %= factor;
-			}
-		}
-		
-		// k = 0
-		for (@Parallel int k1 = 0; k1 < p_1; k1++) {
-			ret[retOffset + retStride * k1] = data[dataOffset + dataStride * k1];
-			ret[retOffset + retStride * k1 + 1] = data[dataOffset + dataStride * k1 + 1];
-		}
-		
-		for (@Parallel int e1 = 1; e1 < factor; e1++) {
-			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
-				ret[retOffset + retStride * (k1 + e1 * p_1)] =
-						data[dataOffset + dataStride * (k1 + e1 * m)];
-				ret[retOffset + retStride * (k1 + e1 * p_1) + 1] =
-						data[dataOffset + dataStride * (k1 + e1 * m) + 1];
-			}
-		}
-		
-		// int i = p_1;
-		// int j = product;
-		for (@Parallel int k = 1; k < q; k++) {
-			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
-				final int i = p_1 + (k - 1) * p_1 + k1;
-				final int j = product + (k - 1) * (p_1 + jump) + k1;
-				
-				ret[retOffset + retStride * j] = data[dataOffset + dataStride * i];
-				ret[retOffset + retStride * j + 1] = data[dataOffset + dataStride * i + 1];
-				// i++;
-				// j++;
-			}
-			// j += jump;
-		}
-		
-		// i = p_1;
-		// j = product;
-		for (@Parallel int k = 1; k < q; k++) {
-			// twiddl = twiddle[fi][k];
-			// twiddl = twiddle[fi];
-			final int twid_base =  k * 2 * (factor - 1);
-			
-			for (@Parallel int k1 = 0; k1 < p_1; k1++) {
-				for (@Parallel int e1 = 1; e1 < factor; e1++) {
-					final int i = p_1 + (k - 1) * p_1 + k1;
-					final int j = product + (k - 1) * (p_1 + jump) + k1;
-					
-					final double xr = data[dataOffset + dataStride * (i + e1 * m)];
-					final double xi = data[dataOffset + dataStride * (i + e1 * m) + 1];
-					
-					// double wr = twiddl[2 * (e1 - 1)];
-					// double wi = -sign * twiddl[2 * (e1 - 1) + 1];
-					
-					final double wr = twiddles[twid_base + 2 * (e1 - 1)];
-					final double wi = -sign * twiddles[twid_base + 2 * (e1 - 1) + 1];
-					
-					ret[retOffset + retStride * (j + e1 * p_1)] = wr * xr - wi * xi;
-					ret[retOffset + retStride * (j + e1 * p_1) + 1] = wr * xi + wi * xr;
-				}
-				// i++;
-				// j++;
-			}
-			// j += jump;
-		}
-	} */
 	
 	private static void passOddStep1(final int n, final double[] data,
 			final int dataOffset, final int dataStride, final double[] ret,
@@ -1516,11 +1334,20 @@ public class Complex {
 	 * @return twiddle factors.
 	 */
 	private double[][] wavetable() {
-		// return wavetable_p();
-		return wavetable_l();
+		/* The parallel version is currently disabled. Since it ususally
+		 * run only once, the extra overhead of executing on the GPU is
+		 * not worth it. Furthermore, even the kernel time of the GPU is
+		 * significantly slower than the linear, likeyly because of the
+		 * sin/cos implementation. A gpu-friendly sincos may be required.
+		 * FIY, the apache commons FastMath implementation is not appropriate
+		 * for TornadoVM, as it contains dynamic allocations (though it
+		 * doesn't actually need them, and could therefore be patched). */
+		
+		// return wavetableP();
+		return wavetableL();
 	}
 	
-	private double[][] wavetable_l() {
+	private double[][] wavetableL() {
 		if (n < 2)
 			return null;
 		
@@ -1560,16 +1387,17 @@ public class Complex {
 				}
 			}
 		}
+		
 		return ret;
 	}
 	
-	/* private double[][] wavetable_p() {
+	private double[][] wavetableP() {
 		if(n < 2)
 			return null;
 		
 		int product = 1;
 		
-		TaskSchedule s0 = new TaskSchedule("s0");
+		TaskSchedule s = new TaskSchedule("s0");
 		
 		double[][] twid = new double[factors.length][];
 		
@@ -1580,36 +1408,44 @@ public class Complex {
 			
 			twid[i] = new double[(q + 1) * (2 * (factors[i] - 1))];
 			
-			s0.task("t" + i, FFTTest2::wavetable_pk, n, factors[i], q, product_1, twid[i]);
-			s0.streamOut(twid[i]);
+			s.task("t" + i + "_1", Complex::wavetablePkStep1, n, factors[i],
+				q, product_1, twid[i]);
+			s.task("t" + i + "_2", Complex::wavetablePkStep2, n, factors[i],
+				q, product_1, twid[i]);
+			
+			s.streamOut(twid[i]);
 		}
 		
-		s0.execute();
+		s.execute();
 		
 		return twid;
-	} */
+	}
 	
-	/* private static void wavetable_pk(int n, int factor, int q, int product_1, double[] twid) {
+	private static void wavetablePkStep1(int n, int factor, int q,
+			int product_1, double[] twid) {
+		
 		for(@Parallel int j = 0; j < factor - 1; j++) {
 			twid[2 * j] = 1.0;
 			twid[2 * j + 1] = 0.0;
 		}
+	}
+	
+	private static void wavetablePkStep2(int n, int factor, int q,
+			int product_1, double[] twid) {
 		
 		final double d_theta = -2.0 * PI / n;
 		final int line_len = 2 * (factor - 1);
 		
 		for(@Parallel int k = 1; k <= q; k++) {
 			final int twid_base = k * line_len;
-			int m = 0;
 			
-			for(int j = 0; j < factor - 1; j++) {
-				m += k * product_1;
-				m %= n;
-				
+			for(@Parallel int j = 0; j < factor - 1; j++) {
+				final int m = (j * k * product_1) % n;
 				final double theta = d_theta * m;
-				twid[twid_base + 2 * j] = cos(theta);
-				twid[twid_base + 2 * j + 1] = sin(theta);
+				
+				twid[twid_base + 2 * j] = Math.cos(theta);
+				twid[twid_base + 2 * j + 1] = Math.sin(theta);
 			}
 		}
-	} */
+	}
 }
