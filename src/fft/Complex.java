@@ -367,6 +367,9 @@ public class Complex {
 						outStart, outStride, sign, product);
 					break;
 				default:
+					// passOddL(n, twiddle[i], in, inStart, inStride, out,
+						// outStart, outStride, sign, factor, product);
+					
 					TaskSchedule s = new TaskSchedule("s");
 				
 					/* Asynchronously copy, since the first tasks don't need it?
@@ -408,7 +411,7 @@ public class Complex {
 			}
 			
 			pass_end = System.nanoTime();
-			System.out.println("Total Time: " + (pass_end - pass_start) / 1e06 + " ms.");
+			System.out.println("Pass Time: " + (pass_end - pass_start) / 1e06 + " ms.");
 		}
 		
 		if (state == 1) {
@@ -1216,6 +1219,122 @@ public class Complex {
 					ret[retOffset + retStride * (j + e1 * p_1) + 1] = wr * xi + wi * xr;
 				}
 			}
+		}
+	}
+	
+	private static void passOddL(final int n, final double[] twiddles,
+			final double[] data, final int dataOffset, final int dataStride,
+			final double[] ret, final int retOffset, final int retStride,
+			final int sign, final int factor, final int product) {
+		final int m = n / factor;
+		final int q = n / product;
+		final int p_1 = product / factor;
+		final int jump = (factor - 1) * p_1;
+		for (int i = 0; i < m; i++) {
+			ret[retOffset + retStride * i] = data[dataOffset + dataStride * i];
+			ret[retOffset + retStride * i + 1] = data[dataOffset + dataStride * i + 1];
+		}
+		for (int e = 1; e < (factor - 1) / 2 + 1; e++) {
+			for (int i = 0; i < m; i++) {
+				int idx = i + e * m;
+				int idxc = i + (factor - e) * m;
+				ret[retOffset + retStride * idx] =
+						data[dataOffset + dataStride * idx] + data[dataOffset + dataStride * idxc];
+				ret[retOffset + retStride * idx + 1] =
+						data[dataOffset + dataStride * idx + 1] + data[dataOffset + dataStride * idxc + 1];
+				ret[retOffset + retStride * idxc] =
+						data[dataOffset + dataStride * idx] - data[dataOffset + dataStride * idxc];
+				ret[retOffset + retStride * idxc + 1] =
+						data[dataOffset + dataStride * idx + 1] - data[dataOffset + dataStride * idxc + 1];
+			}
+		}
+		for (int i = 0; i < m; i++) {
+			data[dataOffset + dataStride * i] = ret[retOffset + retStride * i];
+			data[dataOffset + dataStride * i + 1] = ret[retOffset + retStride * i + 1];
+		}
+		for (int e1 = 1; e1 < (factor - 1) / 2 + 1; e1++) {
+			for (int i = 0; i < m; i++) {
+				data[dataOffset + dataStride * i] += ret[retOffset + retStride * (i + e1 * m)];
+				data[dataOffset + dataStride * i + 1] += ret[retOffset + retStride * (i + e1 * m) + 1];
+			}
+		}
+		for (int e = 1; e < (factor - 1) / 2 + 1; e++) {
+			int idx = e;
+			double wr, wi;
+			int em = e * m;
+			int ecm = (factor - e) * m;
+			for (int i = 0; i < m; i++) {
+				data[dataOffset + dataStride * (i + em)] = ret[retOffset + retStride * i];
+				data[dataOffset + dataStride * (i + em) + 1] = ret[retOffset + retStride * i + 1];
+				data[dataOffset + dataStride * (i + ecm)] = ret[retOffset + retStride * i];
+				data[dataOffset + dataStride * (i + ecm) + 1] = ret[retOffset + retStride * i + 1];
+			}
+			
+			final int twid_base =  q * 2 * (factor - 1);
+			
+			for (int e1 = 1; e1 < (factor - 1) / 2 + 1; e1++) {
+				if (idx == 0) {
+					wr = 1;
+					wi = 0;
+				} else {
+					wr = twiddles[twid_base + 2 * (idx - 1)];
+					wi = -sign * twiddles[twid_base + 2 * (idx - 1) + 1];
+				}
+				for (int i = 0; i < m; i++) {
+					double ap = wr * ret[retOffset + retStride * (i + e1 * m)];
+					double am = wi * ret[retOffset + retStride * (i + (factor - e1) * m) + 1];
+					double bp = wr * ret[retOffset + retStride * (i + e1 * m) + 1];
+					double bm = wi * ret[retOffset + retStride * (i + (factor - e1) * m)];
+					data[dataOffset + dataStride * (i + em)] += (ap - am);
+					data[dataOffset + dataStride * (i + em) + 1] += (bp + bm);
+					data[dataOffset + dataStride * (i + ecm)] += (ap + am);
+					data[dataOffset + dataStride * (i + ecm) + 1] += (bp - bm);
+				}
+				idx += e;
+				idx %= factor;
+			}
+		}
+		/* k = 0 */
+		for (int k1 = 0; k1 < p_1; k1++) {
+			ret[retOffset + retStride * k1] = data[dataOffset + dataStride * k1];
+			ret[retOffset + retStride * k1 + 1] = data[dataOffset + dataStride * k1 + 1];
+		}
+		for (int e1 = 1; e1 < factor; e1++) {
+			for (int k1 = 0; k1 < p_1; k1++) {
+				ret[retOffset + retStride * (k1 + e1 * p_1)] =
+						data[dataOffset + dataStride * (k1 + e1 * m)];
+				ret[retOffset + retStride * (k1 + e1 * p_1) + 1] =
+						data[dataOffset + dataStride * (k1 + e1 * m) + 1];
+			}
+		}
+		int i = p_1;
+		int j = product;
+		for (int k = 1; k < q; k++) {
+			for (int k1 = 0; k1 < p_1; k1++) {
+				ret[retOffset + retStride * j] = data[dataOffset + dataStride * i];
+				ret[retOffset + retStride * j + 1] = data[dataOffset + dataStride * i + 1];
+				i++;
+				j++;
+			}
+			j += jump;
+		}
+		i = p_1;
+		j = product;
+		for (int k = 1; k < q; k++) {
+			final int twid_base =  k * 2 * (factor - 1);
+			for (int k1 = 0; k1 < p_1; k1++) {
+				for (int e1 = 1; e1 < factor; e1++) {
+					double xr = data[dataOffset + dataStride * (i + e1 * m)];
+					double xi = data[dataOffset + dataStride * (i + e1 * m) + 1];
+					final double wr = twiddles[twid_base + 2 * (e1 - 1)];
+					final double wi = -sign * twiddles[twid_base + 2 * (e1 - 1) + 1];
+					ret[retOffset + retStride * (j + e1 * p_1)] = wr * xr - wi * xi;
+					ret[retOffset + retStride * (j + e1 * p_1) + 1] = wr * xi + wi * xr;
+				}
+				i++;
+				j++;
+			}
+			j += jump;
 		}
 	}
 	

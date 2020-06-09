@@ -30,7 +30,7 @@ public class FFTImage {
 		System.out.println("Allocating memory");
 		double[] data = new double[pixels_x * pixels_y * 2];
 		
-		System.out.println("Parsing Image");
+		System.out.printf("Parsing Image (%d pixels)\n", pixels_x * pixels_y);
 		
 		int data_idx = 0;
 		for(int x = 0; x < image.getWidth(); x++) {
