@@ -1,4 +1,5 @@
-TORNADO_HOME = ../tornadovm
+$(if $(TORNADO_HOME),, $(error Please define the "TORNADO_HOME" variable))
+$(if $(JAVA_HOME),, $(error Please define the "JAVA_HOME" variable))
 
 tornado = $(TORNADO_HOME)/bin/bin/tornado
 javac = $(JAVA_HOME)/bin/javac
