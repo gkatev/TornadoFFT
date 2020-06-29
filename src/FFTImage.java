@@ -3,7 +3,6 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 
 import fft.Complex;
-import fft.Complex2D;
 
 public class FFTImage {
 	public static void main(String args[]) throws Exception {
